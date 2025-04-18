@@ -1,6 +1,6 @@
 package com.example.composecharactersbase.presentation.ui
 
-import androidx.compose.foundation.Image
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,8 +16,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -25,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -35,45 +38,39 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import coil.compose.rememberAsyncImagePainter
 import com.example.composecharactersbase.data.model.Character
 import com.example.composecharactersbase.presentation.viewmodel.CharacterViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import coil.compose.AsyncImage
 
 @Composable
-fun CharacterApp(characterViewModel: CharacterViewModel = hiltViewModel()) {
-    // Função principal que inicia a tela do aplicativo.
-    // Aqui chamamos a tela que lista os personagens.
-//    CharacterListScreen(characterViewModel)
+fun CharacterApp(navController: NavHostController = rememberNavController()) {
+    NavHost(
+        navController = navController,
+        startDestination = "/list"
+    ) {
+        composable("/list") {
+            CharacterListScreen(navController)
+        }
+
+        composable("/detail/{characterId}") { backStackEntry ->
+            var characterId = backStackEntry.arguments?.getString("characterId")?.toIntOrNull() ?: -1
+            CharacterDetailScreen(characterId, navController)
+        }
+    }
 }
 
 @Composable
-fun CharacterListScreen(characterViewModel: CharacterViewModel = hiltViewModel()) {
-    characterViewModel.fetchUser()
+fun CharacterListScreen(navController: NavController, characterViewModel: CharacterViewModel = hiltViewModel()) {
+    LaunchedEffect(Unit) {
+        characterViewModel.fetchAllCharacters()
+    }
     val characters by characterViewModel.characters.observeAsState(emptyList())
-
-
-    // Lista de personagens mockados (dados fictícios para teste).
-//    val characters = listOf(
-//        CharacterMock(
-//            name = "Rick Sanchez",
-//            status = "Alive",
-//            species = "Human",
-//            imageUrl = "https://rickandmortyapi.com/api/character/avatar/1.jpeg"
-//        ),
-//        CharacterMock(
-//            name = "Morty Smith",
-//            status = "Alive",
-//            species = "Human",
-//            imageUrl = "https://rickandmortyapi.com/api/character/avatar/2.jpeg"
-//        ),
-//        CharacterMock(
-//            name = "Summer Smith",
-//            status = "Alive",
-//            species = "Human",
-//            imageUrl = "https://rickandmortyapi.com/api/character/avatar/3.jpeg"
-//        )
-//    )
 
     // LazyColumn é uma lista otimizada para exibir grandes quantidades de dados.
     LazyColumn(
@@ -84,18 +81,19 @@ fun CharacterListScreen(characterViewModel: CharacterViewModel = hiltViewModel()
     ) {
         // Para cada personagem na lista, cria um item na LazyColumn.
         items(characters) { character ->
-            CharacterCard(character) // Exibe o cartão do personagem.
+            CharacterCard(character, characterViewModel, navController) // Exibe o cartão do personagem.
         }
     }
 }
 
 @Composable
-fun CharacterCard(character: Character) {
+fun CharacterCard(character: Character, characterViewModel: CharacterViewModel, navController: NavController) {
     // Estado que controla se o personagem é favorito ou não.
-    var isFavorite by remember { mutableStateOf(false) }
+    var isFavorite by remember { mutableStateOf(character.favorite) }
 
     // Card é um componente que cria um contêiner com elevação e bordas arredondadas.
     Card(
+        onClick = {navController.navigate("/detail/${character.id}")},
         modifier = Modifier
             .fillMaxWidth() // Preenche toda a largura disponível.
             .height(140.dp), // Define a altura do cartão.
@@ -110,12 +108,13 @@ fun CharacterCard(character: Character) {
             verticalAlignment = Alignment.CenterVertically // Alinha os elementos verticalmente ao centro.
         ) {
             // Exibe a imagem do personagem.
-            Image(
-                painter = rememberAsyncImagePainter(model = character.imageUrl), // Carrega a imagem da URL.
-                contentDescription = "Character image", // Descrição da imagem para acessibilidade.
+
+            AsyncImage(
+                model = character.image,
+                contentDescription = character.name,
                 modifier = Modifier
-                    .size(100.dp) // Define o tamanho da imagem.
-                    .clip(RoundedCornerShape(12.dp)) // Adiciona bordas arredondadas à imagem.
+                    .size(100.dp)
+                    .clip(RoundedCornerShape(12.dp))
             )
 
             // Espaçamento horizontal entre a imagem e o texto.
@@ -139,7 +138,9 @@ fun CharacterCard(character: Character) {
             // Botão para marcar/desmarcar o personagem como favorito.
             IconButton(
                 onClick = {
-                    isFavorite = !isFavorite // Alterna o estado de favorito.
+                    isFavorite = !isFavorite
+                    character.favorite = isFavorite
+                    characterViewModel.setCharacterFavorite(character)
                     // TODO: Salvar ou remover dos favoritos usando SharedPreferences.
                 }
             ) {
@@ -154,10 +155,60 @@ fun CharacterCard(character: Character) {
     }
 }
 
-// Classe de dados que representa um personagem.
-data class CharacterMock(
-    val name: String, // Nome do personagem.
-    val status: String, // Status do personagem (ex.: Vivo, Morto).
-    val species: String, // Espécie do personagem (ex.: Humano, Alien).
-    val imageUrl: String // URL da imagem do personagem.
-)
+@Composable
+fun CharacterDetailScreen(characterId: Int, navController: NavController, characterViewModel: CharacterViewModel = hiltViewModel()) {
+    LaunchedEffect(Unit) {
+        characterViewModel.getCharacterById(characterId)
+    }
+    val characterDetail by characterViewModel.characterDetail.observeAsState()
+
+    IconButton(
+        onClick = {
+            navController.popBackStack("/list", false, false)
+        }
+    ) {
+        Icon(
+            imageVector = Icons.Default.ArrowBack,
+            contentDescription = "Voltar", // Descrição do ícone para acessibilidade.
+            tint = Color.Black // Cor do ícone.
+        )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxSize() // Preenche todo o espaço disponível no cartão.
+            .padding(12.dp), // Adiciona um espaçamento interno de 12dp.
+        verticalAlignment = Alignment.CenterVertically // Alinha os elementos verticalmente ao centro.
+    ) {
+        // Exibe a imagem do personagem.
+
+        AsyncImage(
+            model = characterDetail?.image,
+            contentDescription = characterDetail?.name,
+            modifier = Modifier
+                .size(100.dp)
+                .clip(RoundedCornerShape(12.dp))
+        )
+
+        // Espaçamento horizontal entre a imagem e o texto.
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // Coluna para organizar os textos verticalmente.
+        Column(
+            modifier = Modifier
+                .weight(1f) // Faz com que a coluna ocupe o espaço restante.
+                .fillMaxHeight(), // Preenche toda a altura disponível.
+            verticalArrangement = Arrangement.Center // Alinha os textos verticalmente ao centro.
+        ) {
+            // Exibe o nome do personagem.
+            Text(
+                text = characterDetail?.name.orEmpty(),
+                style = MaterialTheme.typography.titleMedium
+            )
+            // Exibe o status do personagem.
+            Text(text = "Status: ${characterDetail?.status}")
+            // Exibe a espécie do personagem.
+            Text(text = "Species: ${characterDetail?.species}")
+        }
+    }
+}
